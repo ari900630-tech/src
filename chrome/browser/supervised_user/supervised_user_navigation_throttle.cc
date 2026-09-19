@@ -125,11 +125,8 @@ SupervisedUserNavigationThrottle::MaybeCreateThrottleFor(
     content::NavigationHandle* navigation_handle) {
   if (!navigation_handle->IsInMainFrame())
     return nullptr;
-  Profile* profile = Profile::FromBrowserContext(
-      navigation_handle->GetWebContents()->GetBrowserContext());
 
-  // Force the throttle for every profile instead of only supervised profiles.
-  // This ensures adult-content filtering is active for all users.
+  // Force the throttle for every profile rather than only supervised users.
   return base::WrapUnique(
       new SupervisedUserNavigationThrottle(navigation_handle));
 }
@@ -157,7 +154,6 @@ SupervisedUserNavigationThrottle::CheckURL() {
       url, base::Bind(&SupervisedUserNavigationThrottle::OnCheckDone,
                       weak_ptr_factory_.GetWeakPtr(), url));
   DCHECK_EQ(got_result, behavior_ != SupervisedUserURLFilter::INVALID);
-  // If we got a "not blocked" result synchronously, don't defer.
   deferred_ = !got_result || (behavior_ == SupervisedUserURLFilter::BLOCK);
   if (got_result)
     behavior_ = SupervisedUserURLFilter::INVALID;
@@ -169,11 +165,6 @@ SupervisedUserNavigationThrottle::CheckURL() {
 void SupervisedUserNavigationThrottle::ShowInterstitial(
     const GURL& url,
     supervised_user_error_page::FilteringBehaviorReason reason) {
-  // Don't show interstitial synchronously - it doesn't seem like a good idea to
-  // show an interstitial right in the middle of a call into a
-  // NavigationThrottle. This also lets OnInterstitialResult to be invoked
-  // synchronously, once a callback is passed into the
-  // SupervisedUserNavigationObserver.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&SupervisedUserNavigationThrottle::ShowInterstitialAsync,
@@ -182,8 +173,6 @@ void SupervisedUserNavigationThrottle::ShowInterstitial(
 
 void SupervisedUserNavigationThrottle::ShowInterstitialAsync(
     supervised_user_error_page::FilteringBehaviorReason reason) {
-  // May not yet have been set when ShowInterstitial was called, but should have
-  // been set by the time this is invoked.
   DCHECK(deferred_);
   SupervisedUserNavigationObserver::OnRequestBlocked(
       navigation_handle()->GetWebContents(), navigation_handle()->GetURL(),
@@ -212,18 +201,13 @@ void SupervisedUserNavigationThrottle::OnCheckDone(
     supervised_user_error_page::FilteringBehaviorReason reason,
     bool uncertain) {
   DCHECK_EQ(SupervisedUserURLFilter::INVALID, behavior_);
-  // If we got a result synchronously, pass it back to ShowInterstitialIfNeeded.
   if (!deferred_)
     behavior_ = behavior;
 
   reason_ = reason;
-
   ui::PageTransition transition = navigation_handle()->GetPageTransition();
-
   RecordFilterResultEvent(false, behavior, reason, uncertain, transition);
 
-  // If both the static blacklist and the async checker are enabled, also record
-  // SafeSites-only UMA events.
   if (url_filter_->HasBlacklist() && url_filter_->HasAsyncURLChecker() &&
       (reason == supervised_user_error_page::ASYNC_CHECKER ||
        reason == supervised_user_error_page::BLACKLIST)) {
@@ -255,8 +239,6 @@ void SupervisedUserNavigationThrottle::OnInterstitialResult(
               Profile::FromBrowserContext(
                   navigation_handle()->GetWebContents()->GetBrowserContext()),
               reason_);
-      // If committed interstitials are enabled, include the HTML content in the
-      // ThrottleCheckResult.
       CancelDeferredNavigation(content::NavigationThrottle::ThrottleCheckResult(
           CANCEL, net::ERR_BLOCKED_BY_CLIENT, interstitial_html));
     }
