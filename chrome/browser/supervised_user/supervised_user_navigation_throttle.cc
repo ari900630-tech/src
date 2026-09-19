@@ -127,9 +127,9 @@ SupervisedUserNavigationThrottle::MaybeCreateThrottleFor(
     return nullptr;
   Profile* profile = Profile::FromBrowserContext(
       navigation_handle->GetWebContents()->GetBrowserContext());
-  if (!profile->IsSupervised())
-    return nullptr;
-  // Can't use std::make_unique because the constructor is private.
+
+  // Force the throttle for every profile instead of only supervised profiles.
+  // This ensures adult-content filtering is active for all users.
   return base::WrapUnique(
       new SupervisedUserNavigationThrottle(navigation_handle));
 }
